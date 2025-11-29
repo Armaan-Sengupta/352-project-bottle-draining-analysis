@@ -6,7 +6,7 @@ p.mu = 0.001003;      % Viscosity (kg/m.s)
 p.D = 0.11045;        % Tank Diameter (m)
 p.d = 0.0065;         % Pipe Diameter (m)
 p.K2 = 0.78;          % Loss Coefficient
-p.L = 0.0127;            % Pipe Length (m) 
+p.L = 0.5;            % Pipe Length (m) 
 p.eps = 1.5e-6;       % Pipe Roughness (m) 
 p.g = 9.81;           % Gravity (m/s^2)
 
@@ -15,29 +15,27 @@ y0 = [0.1365; 0];
 t_span = [0 180];
 
 %% 2. Solve ODE
-% ode45 works much better now that the discontinuity is smoothed out
-opts = odeset('RelTol', 1e-6, 'AbsTol', 1e-6, 'MaxStep', 0.001); 
+% We use ode15s because the friction switch makes the problem "stiff"
+opts = odeset('RelTol', 1e-6, 'AbsTol', 1e-6, 'MaxStep',0.001); 
 [t, y] = ode45(@(t,y) tank_physics(t, y, p), t_span, y0, opts);
 
 % Extract Results
 h = y(:,1);
 v = y(:,2);
-Re = (p.rho .* abs(v) .* p.d) ./ p.mu; 
+Re = (p.rho .* abs(v) .* p.d) ./ p.mu; % Calculate Reynolds for plotting
 
 %% 3. Plot Results
 figure('Position', [100, 100, 1200, 400]);
 
 subplot(1,3,1); plot(t, h, 'LineWidth', 2);
 title('Tank Height'); xlabel('Time (s)'); ylabel('m'); grid on;
-ylim([0, max(h) + 0.01]);
+ylim([0, max(h) + 0.01]); % Set y-axis limits for Tank Height plot
 
 subplot(1,3,2); plot(t, v, 'LineWidth', 2);
 title('Exit Velocity'); xlabel('Time (s)'); ylabel('m/s'); grid on;
 
 subplot(1,3,3); plot(t, Re, 'LineWidth', 2);
-% Add lines to show the Transition Zone (2300 - 4000)
-yline(2300, '--', 'Laminar Limit'); 
-yline(4000, '--', 'Turbulent Start');
+yline(2300, '--'); % Show transition line
 title('Reynolds Number'); xlabel('Time (s)'); grid on;
 
 %% 4. Physics Function
@@ -45,41 +43,38 @@ function dydt = tank_physics(~, y, p)
     h = y(1);
     v = y(2);
     
+    % Stop if empty
     if h <= 0
         dydt = [0; 0];
         return;
     end
     
+    % Continuity (dh/dt)
     dh_dt = - (p.d / p.D)^2 * v;
     
-    % --- INTERPOLATION LOGIC ---
+    % Friction Factor (Switching Logic)
     Re_inst = (p.rho * abs(v) * p.d) / p.mu;
     
-    % 1. Calculate Laminar Friction
-    f_lam = 64 / max(Re_inst, 1);
-    
-    % 2. Calculate Turbulent Friction (Haaland)
-    term = (p.eps/p.d)/3.7 + 6.9/max(Re_inst, 1);
-    f_turb = (-1.8 * log10(term))^(-2);
-    
-    % 3. Determine 'f' based on Flow Regime
     if Re_inst < 2300
-        % Pure Laminar
-        f = f_lam;
-        
+        f = 64 / Re;
     elseif Re_inst > 4000
-        % Pure Turbulent
-        f = f_turb;
-        
+        % Full Turbulent (Haaland)
+        term = (p.eps/p.d)/3.7 + 6.9/Re;
+        f = (-1.8 * log10(term))^(-2);
     else
-        % Transition Zone (2300 to 4000)
-        % Calculate weighting factor 'w' (0 at 2300, 1 at 4000)
-        w = (Re_inst - 2300) / (4000 - 2300);
+        % Transition Zone (2300 to 4000): Blend the two values
+        f_lam = 64 / 2300;
         
-        % Linear Interpolation: Blend the two values
-        f = (1 - w) * f_lam + w * f_turb;
+        % Calculate what turbulent f would be at Re=4000
+        term_turb = (p.eps/p.d)/3.7 + 6.9/4000;
+        f_turb = (-1.8 * log10(term_turb))^(-2);
+        
+        % Linear interpolation between them
+        weight = (Re_inst - 2300) / (4000 - 2300);
+        f = f_lam + weight * (f_turb - f_lam);
     end
-    % ---------------------------
+    % Momentum Balance (Solving for dv/dt)
+    % L*dv/dt = Potential + SurfaceKE - ExitKE - FrictionLoss - MinorLoss
     
     loss_friction = p.g * f * (p.L/p.d) * (v^2 / (2*p.g));
     loss_minor    = p.g * p.K2 * (v^2 / (2*p.g));
