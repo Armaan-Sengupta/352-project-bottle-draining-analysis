@@ -5,7 +5,7 @@ p.rho = 998.21;       % Density (kg/m^3)
 p.mu = 0.001003;      % Viscosity (kg/m.s)
 p.D = 0.11045;        % Tank Diameter (m)
 p.d = 0.0065;         % Pipe Diameter (m)
-p.K2 = 0.0;           % Loss Coefficient
+p.K2 = 0.78;          % Loss Coefficient
 p.L = 7.5/39.37;      % Pipe Length (m) 
 p.eps = 0.5e-6;       % Pipe Roughness (m) 
 p.g = 9.81;           % Gravity (m/s^2)
@@ -14,7 +14,7 @@ p.g = 9.81;           % Gravity (m/s^2)
 y0 = [0.1365; 0]; 
 t_span = [0 180];
 
-%% 2. Solve ODE (Colebrook + Interpolation)
+%% 2. Solve ODE (friction factor uses Colebrook + Interpolation)
 opts = odeset('RelTol', 1e-6, 'AbsTol', 1e-6, 'MaxStep', 0.01); 
 [t, y] = ode45(@(t,y) tank_physics(t, y, p), t_span, y0, opts);
 
@@ -130,14 +130,11 @@ xlabel('Time (s)'); ylabel('Acceleration (m/s^2)'); title('Fluid Acceleration (d
 style_axis(ax4);
 xlim([0, 1]); % Restrict to first 1 seconds
 
-%% 5. Physics Function (Iterative Colebrook + Interpolation)
+%% 5. Bottle model (Iterative Colebrook + Interpolation for transient)
 function dydt = tank_physics(~, y, p)
     h = y(1);
     v = y(2);
     
-    % FIX APPLIED HERE:
-    % Allow velocity to decay exponentially if tank is empty.
-    % This prevents "freezing" at high velocity and allows detection of v < 1e-3.
     if h <= 0
         dydt = [0; -v]; 
         return;
@@ -152,6 +149,7 @@ function dydt = tank_physics(~, y, p)
     f_lam = 64 / Re_safe;
     
     if Re_inst > 2300
+        % Colebrook equation is not a closed form equation so need to solve
         f_turb = solve_colebrook(Re_safe, p.eps, p.d);
     else
         f_turb = 0; 
@@ -170,8 +168,7 @@ function dydt = tank_physics(~, y, p)
     loss_friction = p.g * f * (p.L/p.d) * (v^2 / (2*p.g));
     loss_minor    = p.g * p.K2 * (v^2 / (2*p.g));
     
-    driving_force = p.g*h + 0.5*dh_dt^2 - 0.5*v^2 - loss_friction - loss_minor;
-    dv_dt = driving_force / p.L;
+    dv_dt = (p.g*h + 0.5*dh_dt^2 - 0.5*v^2 - loss_friction - loss_minor) / p.L;
     
     dydt = [dh_dt; dv_dt];
 end

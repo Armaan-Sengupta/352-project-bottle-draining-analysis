@@ -10,17 +10,16 @@ p.L = 7.5/39.37;      % Pipe Length (m) - USED FOR FRICTION
 p.eps = 0.5e-6;       % Pipe Roughness (m) 
 p.g = 9.81;           % Gravity (m/s^2)
 
-% --- THE TRICK: Artificially small inertia ---
-% This forces dv/dt to respond instantly, mimicking "ignoring inertia"
+% This forces dv/dt to respond instantly, mimicking "ignoring dv/dt term"
 p.L_inertia = 1e-8;   
 
 % Initial Conditions [Height; Velocity]
 y0 = [0.1365; 0]; 
 t_span = [0 180];
 
-%% 2. Solve ODE (Stiff Solver for "Instant" Inertia)
-% MUST use ode15s because the tiny L_inertia makes the system "Stiff"
-opts = odeset('RelTol', 1e-6, 'AbsTol', 1e-6, 'MaxStep', 0.5); 
+%% 2. Solve ODE 
+% ode15s worked better here
+opts = odeset('RelTol', 1e-6, 'AbsTol', 1e-6, 'MaxStep', 0.01); 
 [t, y] = ode15s(@(t,y) tank_physics(t, y, p), t_span, y0, opts);
 
 % Extract Results
@@ -103,7 +102,7 @@ plot(t, v, 'm-', 'LineWidth', 2); hold on;
 xlabel('Time (s)'); ylabel('Velocity (m/s)'); title('Exit Velocity', 'Color', 'w'); grid on;
 style_axis(ax2);
 
-% ADDED: Plot the 1e-3 point on the velocity graph as well
+%Plot the 1e-3 point on the velocity graph
 if ~isempty(idx_v_zero)
     plot(t(idx_v_zero), v(idx_v_zero), 'ro', 'MarkerFaceColor', 'r', 'MarkerSize', 8);
     text(t(idx_v_zero), v(idx_v_zero), sprintf('  v < 1e-3 m/s\n  t=%.1fs', t(idx_v_zero)), ...
@@ -172,8 +171,8 @@ function dydt = tank_physics(~, y, p)
     
     driving_force = p.g*h + 0.5*dh_dt^2 - 0.5*v^2 - loss_friction - loss_minor;
     
-    % --- MINIMAL CHANGE EDIT ---
-    % Instead of dividing by physical L, we divide by tiny inertial L
+    % Instead of dividing by physical L, we divide by a near 0 value which
+    % makes the unsteady bernouli term go to zero
     dv_dt = driving_force / p.L_inertia;
     
     dydt = [dh_dt; dv_dt];

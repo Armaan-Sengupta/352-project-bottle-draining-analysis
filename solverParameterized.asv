@@ -137,7 +137,8 @@ function dydt = tank_physics(~, y, p)
     v = y(2);
     
     if h <= 0
-        dydt = [0; -v]; % Exponential decay of residual velocity d(e^x)/dt = e^x
+        dydt = [0; -v]; % Exponential decay of residual velocity
+        %d(e^x)/dt = 
         return;
     end
     
