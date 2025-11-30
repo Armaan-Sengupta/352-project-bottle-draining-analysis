@@ -5,7 +5,7 @@ p.rho = 998.21;       % Density (kg/m^3)
 p.mu = 0.001003;      % Viscosity (kg/m.s)
 p.D = 0.11045;        % Tank Diameter (m)
 p.d = 0.0065;         % Pipe Diameter (m)
-p.K2 = 0.0;          % Loss Coefficient
+p.K2 = 0.0;           % Loss Coefficient
 p.L = 7.5/39.37;      % Pipe Length (m) 
 p.eps = 0.5e-6;       % Pipe Roughness (m) 
 p.g = 9.81;           % Gravity (m/s^2)
@@ -37,7 +37,7 @@ end
 % Find Peak Velocity to use as a reference point (avoid t=0 issues)
 [~, idx_peak] = max(v);
 
-% A. When Velocity drops to ~0 (1e-4 m/s) -- AFTER PEAK
+% A. When Velocity drops to ~0 (1e-3 m/s) -- AFTER PEAK
 idx_v_zero_offset = find(v(idx_peak:end) <= 1e-3, 1);
 if ~isempty(idx_v_zero_offset)
     idx_v_zero = idx_peak + idx_v_zero_offset - 1;
@@ -135,8 +135,11 @@ function dydt = tank_physics(~, y, p)
     h = y(1);
     v = y(2);
     
+    % FIX APPLIED HERE:
+    % Allow velocity to decay exponentially if tank is empty.
+    % This prevents "freezing" at high velocity and allows detection of v < 1e-3.
     if h <= 0
-        dydt = [0; 0];
+        dydt = [0; -v]; 
         return;
     end
     
